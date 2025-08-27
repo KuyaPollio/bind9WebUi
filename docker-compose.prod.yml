@@ -1,0 +1,79 @@
+version: '3.8'
+
+# BIND9 WebUI - Production Deployment
+# This file uses pre-built images from GitHub Container Registry
+
+services:
+  bind9:
+    image: ubuntu/bind9:latest
+    container_name: bind9-dns
+    restart: unless-stopped
+    ports:
+      - "${DNS_PORT:-9053}:53/tcp"
+      - "${DNS_PORT:-9053}:53/udp"
+    volumes:
+      - ./bind9/config:/etc/bind
+      - ./bind9/cache:/var/cache/bind
+      - ./bind9/records:/var/lib/bind
+    environment:
+      - BIND9_USER=bind
+      - TZ=${TZ:-UTC}
+    networks:
+      - dns-network
+
+  dns-ui-backend:
+    image: ghcr.io/kuyapollio/bind9webui-backend:latest
+    container_name: dns-ui-backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      - ./bind9/config:/app/bind9/config
+      - ./bind9/records:/app/bind9/records
+      - ./backend/data:/app/data
+    environment:
+      # Server Configuration
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3001
+      
+      # Authentication - CHANGE THIS SECRET IN PRODUCTION!
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-please}
+      
+      # File Paths (Docker container paths)
+      - BIND9_CONFIG_PATH=/app/bind9/config
+      - BIND9_RECORDS_PATH=/app/bind9/records
+      - DATA_PATH=/app/data
+      
+      # Frontend URL (for CORS)
+      - FRONTEND_URL=http://localhost:${WEBUI_PORT:-3000}
+      
+      # Timezone
+      - TZ=${TZ:-UTC}
+    depends_on:
+      - bind9
+    networks:
+      - dns-network
+
+  dns-ui-frontend:
+    image: ghcr.io/kuyapollio/bind9webui-frontend:latest
+    container_name: dns-ui-frontend
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-3000}:80"
+    environment:
+      # API Configuration
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:3001}
+    depends_on:
+      - dns-ui-backend
+    networks:
+      - dns-network
+
+networks:
+  dns-network:
+    driver: bridge
+
+volumes:
+  bind9-config:
+  bind9-cache:
+  bind9-records:
+  backend-data:
