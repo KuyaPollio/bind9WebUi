@@ -4,6 +4,33 @@ version: '3.8'
 # This file uses pre-built images from GitHub Container Registry
 
 services:
+  # Init container to fix permissions
+  init-permissions:
+    image: alpine:latest
+    container_name: init-permissions
+    volumes:
+      - ./backend/data:/data
+      - ./bind9:/bind9
+    command: >
+      sh -c "
+        echo 'Setting up directory structure and permissions...'
+        mkdir -p /data /bind9/config /bind9/cache /bind9/records
+        
+        # Set ownership for backend data (www-data user typically has UID 33 in most containers)
+        chown -R 33:33 /data 2>/dev/null || chown -R 1000:1000 /data
+        chmod -R 755 /data
+        
+        # Set ownership for bind9 directories (bind user UID 101)
+        chown -R 101:101 /bind9 2>/dev/null || echo 'Warning: Could not set bind9 ownership, continuing...'
+        chmod -R 755 /bind9
+        
+        # Ensure config files are readable
+        find /bind9/config -type f -exec chmod 644 {} \; 2>/dev/null || true
+        
+        echo 'Permissions setup completed successfully'
+      "
+    restart: "no"
+
   bind9:
     image: ubuntu/bind9:latest
     container_name: bind9-dns
@@ -20,6 +47,12 @@ services:
       - TZ=${TZ:-UTC}
     networks:
       - dns-network
+    healthcheck:
+      test: ["CMD", "dig", "@127.0.0.1", "localhost", "+short"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   dns-ui-backend:
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
@@ -44,15 +77,24 @@ services:
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS)
-      - FRONTEND_URL=http://localhost:${WEBUI_PORT:-3000}
+      # Frontend URL (for CORS) - Allow all origins in production for now
+      - FRONTEND_URL=*
       
       # Timezone
       - TZ=${TZ:-UTC}
     depends_on:
-      - bind9
+      init-permissions:
+        condition: service_completed_successfully
+      bind9:
+        condition: service_started
     networks:
       - dns-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   dns-ui-frontend:
     image: ghcr.io/kuyapollio/bind9webui-frontend:latest
@@ -61,12 +103,19 @@ services:
     ports:
       - "${WEBUI_PORT:-3000}:80"
     environment:
-      # API Configuration
-      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:3001}
+      # API Configuration - Use relative URL since nginx will proxy
+      - REACT_APP_API_URL=
     depends_on:
-      - dns-ui-backend
+      dns-ui-backend:
+        condition: service_started
     networks:
       - dns-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   dns-network:

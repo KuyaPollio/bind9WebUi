@@ -15,10 +15,20 @@ const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+
+// CORS configuration - more permissive for production
+const corsOptions = {
   credentials: true
-}));
+};
+
+// If FRONTEND_URL is '*', allow all origins, otherwise use specific origin
+if (process.env.FRONTEND_URL === '*') {
+  corsOptions.origin = true; // Allow all origins
+} else {
+  corsOptions.origin = process.env.FRONTEND_URL || 'http://localhost:3000';
+}
+
+app.use(cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
