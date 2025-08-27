@@ -49,8 +49,8 @@ services:
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS) - Set to match your frontend URL
-      - FRONTEND_URL=${FRONTEND_URL:-http://10.0.0.11:3131}
+      # Frontend URL (for CORS) - Allow all origins since nginx handles the proxy
+      - FRONTEND_URL=*
       
       # Timezone
       - TZ=${TZ:-UTC}
@@ -67,9 +67,8 @@ services:
     ports:
       - "${WEBUI_PORT:-3131}:80"
     environment:
-      # API Configuration - Use environment variable or default to localhost
-      # For production, set this to your server's IP:port in the .env file
-      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:3001}
+      # API Configuration - Use relative URL with nginx proxy for Docker network communication
+      - REACT_APP_API_URL=/api
     depends_on:
       dns-ui-backend:
         condition: service_started
