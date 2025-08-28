@@ -27,9 +27,7 @@ services:
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    # Temporarily expose backend port for debugging
-    ports:
-      - "3001:3001"
+    # No ports exposed - only accessible from frontend container
     volumes:
       - /bind9/config:/app/bind9/config
       - /bind9/records:/app/bind9/records
@@ -65,8 +63,8 @@ services:
     ports:
       - "3131:80"
     environment:
-      # API Configuration - Use external IP for browser access
-      - REACT_APP_API_URL=http://10.0.0.11:3001
+      # API Configuration - Use relative URL since nginx will proxy
+      - REACT_APP_API_URL=/api
     depends_on:
       - dns-ui-backend
     networks:
