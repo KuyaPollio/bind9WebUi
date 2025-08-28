@@ -48,6 +48,8 @@ services:
       
       # Frontend URL (for CORS) - Allow all origins since nginx will proxy
       - FRONTEND_URL=*
+      # Trust proxy for rate limiting
+      - TRUST_PROXY=true
       
       # Timezone
       - TZ=UTC
