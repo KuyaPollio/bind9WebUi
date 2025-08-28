@@ -27,9 +27,7 @@ services:
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    # Temporarily expose backend port for old frontend image
-    ports:
-      - "3001:3001"
+    # No ports exposed - only accessible from frontend container
     volumes:
       - /bind9/config:/app/bind9/config
       - /bind9/records:/app/bind9/records
@@ -48,8 +46,8 @@ services:
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS) - Allow specific origin for old frontend
-      - FRONTEND_URL=http://10.0.0.11:3131
+      # Frontend URL (for CORS) - Allow all origins since nginx will proxy
+      - FRONTEND_URL=*
       # Trust proxy for rate limiting
       - TRUST_PROXY=true
       
