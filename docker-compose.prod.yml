@@ -3,42 +3,39 @@ version: '3.8'
 # BIND9 WebUI - Production Deployment
 # This file uses pre-built images from GitHub Container Registry
 
-# Environment variables - all configured here, no external .env file needed
+# Environment variables - customize these as needed
 x-environment: &common-env
-  # Port Configuration
+  # Web UI Configuration
   WEBUI_PORT: 3131
   API_PORT: 3001
   DNS_PORT: 9053
   
-  # Security Configuration - CHANGE THIS SECRET IN PRODUCTION!
+  # Security Configuration
   JWT_SECRET: your-super-secret-jwt-key-change-in-production-please
   
   # Application Configuration
   NODE_ENV: production
   TZ: UTC
   
-  # Frontend Configuration - Set this to your server's IP for production
+  # Frontend Configuration
   REACT_APP_API_URL: http://10.0.0.11:3001
-  
-  # Backend Configuration
-  FRONTEND_URL: "*"
 
 services:
   bind9:
     image: ubuntu/bind9:latest
     container_name: bind9-dns
     restart: unless-stopped
-    user: "0:0"  # Run as root to avoid permission issues
+    user: "0:0"  # Run as root to create files
     ports:
-      - "9053:53/tcp"
-      - "9053:53/udp"
+      - "${DNS_PORT:-9053}:53/tcp"
+      - "${DNS_PORT:-9053}:53/udp"
     volumes:
       - ./bind9/config:/etc/bind
-      - bind9-cache:/var/cache/bind
-      - bind9-records:/var/lib/bind
+      - ./bind9/cache:/var/cache/bind
+      - ./bind9/records:/var/lib/bind
     environment:
       - BIND9_USER=root
-      - TZ=UTC
+      - TZ=${TZ:-UTC}
     entrypoint: >
       sh -c "
         echo 'Setting up BIND9 configuration...'
@@ -125,38 +122,31 @@ EOF
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    ports:
-      - "3001:3001"
+    # No ports exposed - only accessible from frontend container
     volumes:
-      - ./bind9/config:/app/bind9/config:ro
-      - bind9-records:/app/bind9/records
-      - backend-data:/app/data
-    entrypoint: >
-      sh -c "
-        mkdir -p /app/data
-        exec npm start
-      "
+      - ./bind9/config:/app/bind9/config
+      - ./bind9/records:/app/bind9/records
+      - ./backend/data:/app/data
     environment:
       # Server Configuration
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
       - PORT=3001
       
       # Authentication - CHANGE THIS SECRET IN PRODUCTION!
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production-please
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-please}
       
       # File Paths (Docker container paths)
       - BIND9_CONFIG_PATH=/app/bind9/config
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS) - Allow all origins for browser access
+      # Frontend URL (for CORS) - Allow all origins since nginx will proxy
       - FRONTEND_URL=*
       
       # Timezone
-      - TZ=UTC
+      - TZ=${TZ:-UTC}
     depends_on:
-      bind9:
-        condition: service_started
+      - bind9
     networks:
       - dns-network
 
@@ -165,13 +155,12 @@ EOF
     container_name: dns-ui-frontend
     restart: unless-stopped
     ports:
-      - "3131:80"
+      - "${WEBUI_PORT:-3131}:80"
     environment:
-      # API Configuration - Use direct backend URL for browser access
-      - REACT_APP_API_URL=http://10.0.0.11:3001
+      # API Configuration - Use relative URL since nginx will proxy to backend
+      - REACT_APP_API_URL=/api
     depends_on:
-      dns-ui-backend:
-        condition: service_started
+      - dns-ui-backend
     networks:
       - dns-network
 
