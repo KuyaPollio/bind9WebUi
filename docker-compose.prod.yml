@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 # BIND9 WebUI - Production Deployment
 # This file uses pre-built images from GitHub Container Registry
@@ -59,11 +59,14 @@ services:
       - dns-network
 
   dns-ui-frontend:
-    image: ghcr.io/kuyapollio/bind9webui-frontend:latest
+    image: ghcr.io/kuyapollio/bind9webui-frontend:main
     container_name: dns-ui-frontend
     restart: unless-stopped
     ports:
       - "3131:80"
+    environment:
+      # API Configuration - Use relative URL for nginx proxy
+      - REACT_APP_API_URL=
     depends_on:
       - dns-ui-backend
     networks:
