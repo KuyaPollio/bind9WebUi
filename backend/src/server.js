@@ -35,6 +35,10 @@ if (process.env.FRONTEND_URL === '*') {
 
 app.use(cors(corsOptions));
 
+// Log CORS configuration
+console.log(`[CORS] Configuration:`, corsOptions);
+console.log(`[CORS] FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+
 // Rate limiting - disabled temporarily for debugging
 // const limiter = rateLimit({
 //   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -48,7 +52,25 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  console.log(`[HEALTH] Health check request from ${req.ip}`);
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Test endpoint for debugging
+app.get('/test', (req, res) => {
+  console.log(`[TEST] Test request from ${req.ip} - Origin: ${req.headers.origin}`);
+  res.status(200).json({ 
+    message: 'Backend is working!', 
+    timestamp: new Date().toISOString(),
+    cors: corsOptions,
+    frontend_url: process.env.FRONTEND_URL
+  });
+});
+
+// Logging middleware for all API requests
+app.use('/api', (req, res, next) => {
+  console.log(`[API] ${req.method} ${req.path} - Origin: ${req.headers.origin} - User-Agent: ${req.headers['user-agent']}`);
+  next();
 });
 
 // API routes
