@@ -3,118 +3,23 @@ version: '3.8'
 # BIND9 WebUI - Production Deployment
 # This file uses pre-built images from GitHub Container Registry
 
-# Environment variables - customize these as needed
-x-environment: &common-env
-  # Web UI Configuration
-  WEBUI_PORT: 3131
-  API_PORT: 3001
-  DNS_PORT: 9053
-  
-  # Security Configuration
-  JWT_SECRET: your-super-secret-jwt-key-change-in-production-please
-  
-  # Application Configuration
-  NODE_ENV: production
-  TZ: UTC
-  
-  # Frontend Configuration
-  REACT_APP_API_URL: http://10.0.0.11:3001
-
 services:
   bind9:
     image: ubuntu/bind9:latest
     container_name: bind9-dns
     restart: unless-stopped
-    user: "0:0"  # Run as root to create files
+    # Use default BIND9 user
     ports:
-      - "${DNS_PORT:-9053}:53/tcp"
-      - "${DNS_PORT:-9053}:53/udp"
+      - "9053:53/tcp"
+      - "9053:53/udp"
     volumes:
-      - ./bind9/config:/etc/bind
-      - ./bind9/cache:/var/cache/bind
-      - ./bind9/records:/var/lib/bind
+      - /bind9/config:/etc/bind
+      - /bind9/cache:/var/cache/bind
+      - /bind9/records:/var/lib/bind
     environment:
       - BIND9_USER=root
-      - TZ=${TZ:-UTC}
-    entrypoint: >
-      sh -c "
-        echo 'Setting up BIND9 configuration...'
-        mkdir -p /etc/bind /var/cache/bind /var/lib/bind
-        
-        # Create default config if it doesn't exist
-        if [ ! -f /etc/bind/named.conf ]; then
-          echo 'Creating default named.conf...'
-          cat > /etc/bind/named.conf << 'EOF'
-options {
-    directory "/var/cache/bind";
-    forwarders {
-        8.8.8.8;
-        8.8.4.4;
-        1.1.1.1;
-    };
-    dnssec-validation auto;
-    auth-nxdomain no;
-    listen-on-v6 { any; };
-    listen-on { any; };
-    allow-query { any; };
-    recursion yes;
-};
-include "/etc/bind/named.conf.local";
-include "/etc/bind/named.conf.default-zones";
-EOF
-        fi
-        
-        # Create local config if it doesn't exist
-        if [ ! -f /etc/bind/named.conf.local ]; then
-          echo 'Creating default named.conf.local...'
-          cat > /etc/bind/named.conf.local << 'EOF'
-//
-// Do any local configuration here
-//
-// Consider adding the 1918 zones here, if they are not used in your
-// organization
-//include "/etc/bind/zones.rfc1918";
-EOF
-        fi
-        
-        # Create default zones if they don't exist
-        if [ ! -f /etc/bind/named.conf.default-zones ]; then
-          echo 'Creating default named.conf.default-zones...'
-          cat > /etc/bind/named.conf.default-zones << 'EOF'
-// prime the server with knowledge of the root servers
-zone "." {
-    type hint;
-    file "/usr/share/dns/root.hints";
-};
-
-// be authoritative for the localhost forward and reverse zones, and for
-// broadcast zones as per RFC 1912
-
-zone "localhost" {
-    type master;
-    file "/etc/bind/db.local";
-};
-
-zone "127.in-addr.arpa" {
-    type master;
-    file "/etc/bind/db.127";
-};
-
-zone "0.in-addr.arpa" {
-    type master;
-    file "/etc/bind/db.0";
-};
-
-zone "255.in-addr.arpa" {
-    type master;
-    file "/etc/bind/db.255";
-};
-EOF
-        fi
-        
-        echo 'BIND9 configuration setup complete'
-        exec /usr/sbin/named -u root -g
-      "
+      - TZ=UTC
+    command: ["/bin/bash", "-c", "echo 'options { directory \"/var/cache/bind\"; forwarders { 8.8.8.8; 8.8.4.4; }; dnssec-validation auto; auth-nxdomain no; listen-on-v6 { any; }; listen-on { any; }; allow-query { any; }; recursion yes; };' > /etc/bind/named.conf && echo '// Do any local configuration here' > /etc/bind/named.conf.local && echo 'zone \".\" { type hint; file \"/usr/share/dns/root.hints\"; };' > /etc/bind/named.conf.default-zones && exec /usr/sbin/named -u root -g"]
     networks:
       - dns-network
 
@@ -122,18 +27,21 @@ EOF
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    # No ports exposed - only accessible from frontend container
+    # Temporarily expose backend port for debugging
+    ports:
+      - "3001:3001"
     volumes:
-      - ./bind9/config:/app/bind9/config
-      - ./bind9/records:/app/bind9/records
-      - ./backend/data:/app/data
+      - /bind9/config:/app/bind9/config
+      - /bind9/records:/app/bind9/records
+      - backend-data:/app/data
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /app/data && exec npm start"]
     environment:
       # Server Configuration
-      - NODE_ENV=${NODE_ENV:-production}
+      - NODE_ENV=production
       - PORT=3001
       
       # Authentication - CHANGE THIS SECRET IN PRODUCTION!
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production-please}
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production-please
       
       # File Paths (Docker container paths)
       - BIND9_CONFIG_PATH=/app/bind9/config
@@ -144,7 +52,7 @@ EOF
       - FRONTEND_URL=*
       
       # Timezone
-      - TZ=${TZ:-UTC}
+      - TZ=UTC
     depends_on:
       - bind9
     networks:
@@ -155,10 +63,10 @@ EOF
     container_name: dns-ui-frontend
     restart: unless-stopped
     ports:
-      - "${WEBUI_PORT:-3131}:80"
+      - "3131:80"
     environment:
-      # API Configuration - Use relative URL since nginx will proxy to backend
-      - REACT_APP_API_URL=/api
+      # API Configuration - Use external IP for browser access
+      - REACT_APP_API_URL=http://10.0.0.11:3001
     depends_on:
       - dns-ui-backend
     networks:
