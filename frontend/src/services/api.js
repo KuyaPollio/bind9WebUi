@@ -93,6 +93,7 @@ export const configAPI = {
   createFile: (filename, content) => api.post('/config/files', { filename, content }),
   deleteFile: (filename) => api.delete(`/config/files/${filename}`),
   validate: (content) => api.post('/config/validate', { content }),
+  getHistory: (filename) => api.get(`/config/files/${filename}/history`),
 };
 
 export const recordsAPI = {
@@ -101,6 +102,7 @@ export const recordsAPI = {
   updateZone: (filename, content) => api.put(`/records/zones/${filename}`, { content }),
   createZone: (data) => api.post('/records/zones', data),
   deleteZone: (filename) => api.delete(`/records/zones/${filename}`),
+  getHistory: (filename) => api.get(`/records/zones/${filename}/history`),
 };
 
 export const logsAPI = {

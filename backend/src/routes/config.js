@@ -13,10 +13,12 @@ router.get('/files', async (req, res) => {
   try {
     const files = await fs.readdir(BIND9_CONFIG_PATH);
     const configFiles = files.filter(file => 
-      file.endsWith('.conf') || 
-      file.endsWith('.zone') ||
-      file.startsWith('named.') ||
-      file.startsWith('db.')
+      (file.endsWith('.conf') || 
+       file.endsWith('.zone') ||
+       file.startsWith('named.') ||
+       file.startsWith('db.')) &&
+      !file.includes('.backup.') && // Exclude backup files
+      !file.includes('.deleted.')   // Exclude deleted files
     );
 
     const fileList = await Promise.all(
@@ -163,6 +165,53 @@ router.post('/files', requireAdmin, [
   } catch (error) {
     console.error('Error creating config file:', error);
     res.status(500).json({ error: 'Failed to create configuration file' });
+  }
+});
+
+// Get file history (backups)
+router.get('/files/:filename/history', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    
+    // Security check - prevent directory traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const files = await fs.readdir(BIND9_CONFIG_PATH);
+    const backupFiles = files.filter(file => 
+      file.startsWith(`${filename}.backup.`) || 
+      file.startsWith(`${filename}.deleted.`)
+    );
+
+    const history = await Promise.all(
+      backupFiles.map(async (file) => {
+        const filePath = path.join(BIND9_CONFIG_PATH, file);
+        const stats = await fs.stat(filePath);
+        const content = await fs.readFile(filePath, 'utf8');
+        
+        // Extract timestamp from filename
+        const timestampMatch = file.match(/\.(backup|deleted)\.(\d+)$/);
+        const timestamp = timestampMatch ? parseInt(timestampMatch[2]) : stats.mtime.getTime();
+        
+        return {
+          filename: file,
+          originalName: filename,
+          content,
+          size: stats.size,
+          timestamp: new Date(timestamp),
+          type: file.includes('.deleted.') ? 'deleted' : 'backup'
+        };
+      })
+    );
+
+    // Sort by timestamp (newest first)
+    history.sort((a, b) => b.timestamp - a.timestamp);
+
+    res.json({ history });
+  } catch (error) {
+    console.error('Error reading file history:', error);
+    res.status(500).json({ error: 'Failed to read file history' });
   }
 });
 

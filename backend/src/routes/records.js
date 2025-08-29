@@ -279,6 +279,60 @@ router.delete('/zones/:filename', requireAdmin, [
   }
 });
 
+// Get zone file history (backups)
+router.get('/zones/:filename/history', [
+  param('filename').matches(/^[a-zA-Z0-9._-]+$/).withMessage('Invalid filename')
+], async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: errors.array() 
+      });
+    }
+
+    const { filename } = req.params;
+    
+    const files = await fs.readdir(BIND9_RECORDS_PATH);
+    const backupFiles = files.filter(file => 
+      file.startsWith(`${filename}.backup.`) || 
+      file.startsWith(`${filename}.deleted.`)
+    );
+
+    const history = await Promise.all(
+      backupFiles.map(async (file) => {
+        const filePath = path.join(BIND9_RECORDS_PATH, file);
+        const stats = await fs.stat(filePath);
+        const content = await fs.readFile(filePath, 'utf8');
+        
+        // Extract timestamp from filename
+        const timestampMatch = file.match(/\.(backup|deleted)\.(\d+)$/);
+        const timestamp = timestampMatch ? parseInt(timestampMatch[2]) : stats.mtime.getTime();
+        
+        return {
+          filename: file,
+          originalName: filename,
+          content,
+          size: stats.size,
+          timestamp: new Date(timestamp),
+          type: file.includes('.deleted.') ? 'deleted' : 'backup',
+          records: parseZoneFile(content)
+        };
+      })
+    );
+
+    // Sort by timestamp (newest first)
+    history.sort((a, b) => b.timestamp - a.timestamp);
+
+    res.json({ history });
+  } catch (error) {
+    console.error('Error reading zone file history:', error);
+    res.status(500).json({ error: 'Failed to read zone file history' });
+  }
+});
+
 // Helper function to parse zone file into structured records
 function parseZoneFile(content) {
   const records = [];

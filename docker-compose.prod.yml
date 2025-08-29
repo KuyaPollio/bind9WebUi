@@ -19,7 +19,7 @@ services:
     environment:
       - BIND9_USER=root
       - TZ=UTC
-    command: ["/bin/bash", "-c", "echo 'options { directory \"/var/cache/bind\"; forwarders { 8.8.8.8; 8.8.4.4; }; dnssec-validation auto; auth-nxdomain no; listen-on-v6 { any; }; listen-on { any; }; allow-query { any; }; recursion yes; };' > /etc/bind/named.conf && echo '// Do any local configuration here' > /etc/bind/named.conf.local && echo 'zone \".\" { type hint; file \"/usr/share/dns/root.hints\"; };' > /etc/bind/named.conf.default-zones && exec /usr/sbin/named -u root -g"]
+               command: ["/bin/bash", "-c", "if [ ! -f /etc/bind/named.conf ]; then echo 'options { directory \"/var/cache/bind\"; forwarders { 8.8.8.8; 8.8.4.4; }; dnssec-validation auto; auth-nxdomain no; listen-on-v6 { any; }; listen-on { any; }; allow-query { any; }; recursion yes; };' > /etc/bind/named.conf; fi && if [ ! -f /etc/bind/named.conf.local ]; then echo '// Do any local configuration here' > /etc/bind/named.conf.local; fi && if [ ! -f /etc/bind/named.conf.default-zones ]; then echo 'zone \".\" { type hint; file \"/usr/share/dns/root.hints\"; };' > /etc/bind/named.conf.default-zones; fi && exec /usr/sbin/named -u root -g"]
     networks:
       - dns-network
 
