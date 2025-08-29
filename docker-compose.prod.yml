@@ -27,7 +27,9 @@ services:
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    # No ports exposed - only accessible from frontend container
+    # Expose backend port for frontend access
+    ports:
+      - "3001:3001"
     volumes:
       - /bind9/config:/app/bind9/config
       - /bind9/records:/app/bind9/records
@@ -46,8 +48,8 @@ services:
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS) - Allow all origins since nginx will proxy
-      - FRONTEND_URL=*
+      # Frontend URL (for CORS) - Allow specific origin
+      - FRONTEND_URL=http://10.0.0.11:3131
       # Trust proxy for rate limiting
       - TRUST_PROXY=true
       
@@ -65,8 +67,8 @@ services:
     ports:
       - "3131:80"
     environment:
-      # API Configuration - Use relative URL for nginx proxy
-      - REACT_APP_API_URL=
+      # API Configuration - Override hardcoded localhost:3001
+      - REACT_APP_API_URL=http://10.0.0.11:3001
     depends_on:
       - dns-ui-backend
     networks:
