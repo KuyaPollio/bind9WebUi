@@ -50,6 +50,21 @@ import { recordsAPI } from '../services/api';
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT'];
 
+const getRecordTypeColor = (type) => {
+  const colors = {
+    'A': 'primary',
+    'AAAA': 'secondary',
+    'CNAME': 'info',
+    'MX': 'warning',
+    'NS': 'success',
+    'SOA': 'error',
+    'TXT': 'default',
+    'SRV': 'info',
+    'PTR': 'secondary'
+  };
+  return colors[type] || 'default';
+};
+
 const RecordManager = () => {
   const [zoneFiles, setZoneFiles] = useState([]);
   const [selectedZone, setSelectedZone] = useState(null);
@@ -67,6 +82,16 @@ const RecordManager = () => {
     zoneName: '',
     adminEmail: '',
     ttl: 86400,
+  });
+  
+  // Table editing state
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [addingRecord, setAddingRecord] = useState(false);
+  const [newRecord, setNewRecord] = useState({
+    name: '',
+    ttl: 86400,
+    type: 'A',
+    value: ''
   });
 
   useEffect(() => {
@@ -200,6 +225,78 @@ const RecordManager = () => {
   };
 
   const hasChanges = zoneContent !== originalContent;
+
+  // Table editing functions
+  const startEditingRecord = (index) => {
+    setEditingRecord(index);
+  };
+
+  const cancelEditingRecord = () => {
+    setEditingRecord(null);
+  };
+
+  const saveEditingRecord = (index, updatedRecord) => {
+    const updatedRecords = [...records];
+    updatedRecords[index] = updatedRecord;
+    setRecords(updatedRecords);
+    setEditingRecord(null);
+    updateZoneContentFromRecords(updatedRecords);
+  };
+
+  const deleteRecord = (index) => {
+    const updatedRecords = records.filter((_, i) => i !== index);
+    setRecords(updatedRecords);
+    updateZoneContentFromRecords(updatedRecords);
+  };
+
+  const startAddingRecord = () => {
+    setAddingRecord(true);
+    setNewRecord({
+      name: '',
+      ttl: 86400,
+      type: 'A',
+      value: ''
+    });
+  };
+
+  const cancelAddingRecord = () => {
+    setAddingRecord(false);
+  };
+
+  const saveNewRecord = () => {
+    if (!newRecord.name || !newRecord.value) {
+      toast.error('Name and value are required');
+      return;
+    }
+    
+    const updatedRecords = [...records, newRecord];
+    setRecords(updatedRecords);
+    setAddingRecord(false);
+    updateZoneContentFromRecords(updatedRecords);
+  };
+
+  const updateZoneContentFromRecords = (updatedRecords) => {
+    // Convert records back to zone file format
+    const lines = [];
+    
+    // Add TTL directive if not present
+    if (updatedRecords.length > 0) {
+      lines.push('$TTL 86400');
+      lines.push('');
+    }
+    
+    // Add SOA record first if present
+    const soaRecords = updatedRecords.filter(r => r.type === 'SOA');
+    const otherRecords = updatedRecords.filter(r => r.type !== 'SOA');
+    
+    [...soaRecords, ...otherRecords].forEach(record => {
+      const ttl = record.ttl !== 86400 ? ` ${record.ttl}` : '';
+      lines.push(`${record.name}${ttl} IN ${record.type} ${record.value}`);
+    });
+    
+    const newContent = lines.join('\n');
+    setZoneContent(newContent);
+  };
 
   return (
     <Box>
@@ -370,7 +467,21 @@ const RecordManager = () => {
                 {/* Table View */}
                 {viewMode === 'table' && (
                   <Box>
-                    {records.length === 0 ? (
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                      <Typography variant="h6">DNS Records</Typography>
+                      {isEditing && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<Add />}
+                          onClick={startAddingRecord}
+                          size="small"
+                        >
+                          Add Record
+                        </Button>
+                      )}
+                    </Box>
+                    
+                    {records.length === 0 && !addingRecord ? (
                       <Alert severity="info">
                         No DNS records found in this zone file.
                       </Alert>
@@ -383,41 +494,214 @@ const RecordManager = () => {
                               <TableCell>TTL</TableCell>
                               <TableCell>Type</TableCell>
                               <TableCell>Value</TableCell>
+                              {isEditing && <TableCell>Actions</TableCell>}
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {records.map((record, index) => (
-                              <TableRow key={index}>
+                            {/* Add new record row */}
+                            {addingRecord && (
+                              <TableRow>
                                 <TableCell>
-                                  <Typography variant="body2" fontFamily="monospace">
-                                    {record.name}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell>
-                                  <Typography variant="body2" fontFamily="monospace">
-                                    {record.ttl}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell>
-                                  <Chip
+                                  <TextField
                                     size="small"
-                                    label={record.type}
-                                    color={getRecordTypeColor(record.type)}
-                                    variant="outlined"
+                                    value={newRecord.name}
+                                    onChange={(e) => setNewRecord({...newRecord, name: e.target.value})}
+                                    placeholder="e.g., www"
+                                    fullWidth
                                   />
                                 </TableCell>
                                 <TableCell>
-                                  <Typography 
-                                    variant="body2" 
-                                    fontFamily="monospace"
-                                    sx={{ 
-                                      wordBreak: 'break-all',
-                                      maxWidth: 300,
-                                    }}
-                                  >
-                                    {record.value}
-                                  </Typography>
+                                  <TextField
+                                    size="small"
+                                    type="number"
+                                    value={newRecord.ttl}
+                                    onChange={(e) => setNewRecord({...newRecord, ttl: parseInt(e.target.value) || 86400})}
+                                    fullWidth
+                                  />
                                 </TableCell>
+                                <TableCell>
+                                  <TextField
+                                    select
+                                    size="small"
+                                    value={newRecord.type}
+                                    onChange={(e) => setNewRecord({...newRecord, type: e.target.value})}
+                                    fullWidth
+                                  >
+                                    {RECORD_TYPES.map((type) => (
+                                      <MenuItem key={type} value={type}>
+                                        {type}
+                                      </MenuItem>
+                                    ))}
+                                  </TextField>
+                                </TableCell>
+                                <TableCell>
+                                  <TextField
+                                    size="small"
+                                    value={newRecord.value}
+                                    onChange={(e) => setNewRecord({...newRecord, value: e.target.value})}
+                                    placeholder="e.g., 192.168.1.10"
+                                    fullWidth
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Box display="flex" gap={1}>
+                                    <IconButton
+                                      size="small"
+                                      color="primary"
+                                      onClick={saveNewRecord}
+                                    >
+                                      <Save />
+                                    </IconButton>
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={cancelAddingRecord}
+                                    >
+                                      <Cancel />
+                                    </IconButton>
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            
+                            {/* Existing records */}
+                            {records.map((record, index) => (
+                              <TableRow key={index}>
+                                <TableCell>
+                                  {editingRecord === index ? (
+                                    <TextField
+                                      size="small"
+                                      value={record.name}
+                                      onChange={(e) => {
+                                        const updatedRecord = {...record, name: e.target.value};
+                                        const updatedRecords = [...records];
+                                        updatedRecords[index] = updatedRecord;
+                                        setRecords(updatedRecords);
+                                      }}
+                                      fullWidth
+                                    />
+                                  ) : (
+                                    <Typography variant="body2" fontFamily="monospace">
+                                      {record.name}
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {editingRecord === index ? (
+                                    <TextField
+                                      size="small"
+                                      type="number"
+                                      value={record.ttl}
+                                      onChange={(e) => {
+                                        const updatedRecord = {...record, ttl: parseInt(e.target.value) || 86400};
+                                        const updatedRecords = [...records];
+                                        updatedRecords[index] = updatedRecord;
+                                        setRecords(updatedRecords);
+                                      }}
+                                      fullWidth
+                                    />
+                                  ) : (
+                                    <Typography variant="body2" fontFamily="monospace">
+                                      {record.ttl}
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {editingRecord === index ? (
+                                    <TextField
+                                      select
+                                      size="small"
+                                      value={record.type}
+                                      onChange={(e) => {
+                                        const updatedRecord = {...record, type: e.target.value};
+                                        const updatedRecords = [...records];
+                                        updatedRecords[index] = updatedRecord;
+                                        setRecords(updatedRecords);
+                                      }}
+                                      fullWidth
+                                    >
+                                      {RECORD_TYPES.map((type) => (
+                                        <MenuItem key={type} value={type}>
+                                          {type}
+                                        </MenuItem>
+                                      ))}
+                                    </TextField>
+                                  ) : (
+                                    <Chip
+                                      size="small"
+                                      label={record.type}
+                                      color={getRecordTypeColor(record.type)}
+                                      variant="outlined"
+                                    />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {editingRecord === index ? (
+                                    <TextField
+                                      size="small"
+                                      value={record.value}
+                                      onChange={(e) => {
+                                        const updatedRecord = {...record, value: e.target.value};
+                                        const updatedRecords = [...records];
+                                        updatedRecords[index] = updatedRecord;
+                                        setRecords(updatedRecords);
+                                      }}
+                                      fullWidth
+                                    />
+                                  ) : (
+                                    <Typography 
+                                      variant="body2" 
+                                      fontFamily="monospace"
+                                      sx={{ 
+                                        wordBreak: 'break-all',
+                                        maxWidth: 300,
+                                      }}
+                                    >
+                                      {record.value}
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                {isEditing && (
+                                  <TableCell>
+                                    <Box display="flex" gap={1}>
+                                      {editingRecord === index ? (
+                                        <>
+                                          <IconButton
+                                            size="small"
+                                            color="primary"
+                                            onClick={() => saveEditingRecord(index, record)}
+                                          >
+                                            <Save />
+                                          </IconButton>
+                                          <IconButton
+                                            size="small"
+                                            color="error"
+                                            onClick={cancelEditingRecord}
+                                          >
+                                            <Cancel />
+                                          </IconButton>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <IconButton
+                                            size="small"
+                                            color="primary"
+                                            onClick={() => startEditingRecord(index)}
+                                          >
+                                            <Edit />
+                                          </IconButton>
+                                          <IconButton
+                                            size="small"
+                                            color="error"
+                                            onClick={() => deleteRecord(index)}
+                                          >
+                                            <Delete />
+                                          </IconButton>
+                                        </>
+                                      )}
+                                    </Box>
+                                  </TableCell>
+                                )}
                               </TableRow>
                             ))}
                           </TableBody>
