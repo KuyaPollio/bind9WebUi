@@ -19,7 +19,7 @@ services:
     environment:
       - BIND9_USER=root
       - TZ=UTC
-               command: ["/bin/bash", "-c", "if [ ! -f /etc/bind/named.conf ]; then echo 'options { directory \"/var/cache/bind\"; forwarders { 8.8.8.8; 8.8.4.4; }; dnssec-validation auto; auth-nxdomain no; listen-on-v6 { any; }; listen-on { any; }; allow-query { any; }; recursion yes; };' > /etc/bind/named.conf; fi && if [ ! -f /etc/bind/named.conf.local ]; then echo '// Do any local configuration here' > /etc/bind/named.conf.local; fi && if [ ! -f /etc/bind/named.conf.default-zones ]; then echo 'zone \".\" { type hint; file \"/usr/share/dns/root.hints\"; };' > /etc/bind/named.conf.default-zones; fi && exec /usr/sbin/named -u root -g"]
+    command: ["/bin/bash", "-c", "if [ ! -f /etc/bind/named.conf ]; then echo 'options { directory \"/var/cache/bind\"; forwarders { 8.8.8.8; 8.8.4.4; }; dnssec-validation auto; auth-nxdomain no; listen-on-v6 { any; }; listen-on { any; }; allow-query { any; }; recursion yes; };' > /etc/bind/named.conf; fi && if [ ! -f /etc/bind/named.conf.local ]; then echo '// Do any local configuration here' > /etc/bind/named.conf.local; fi && if [ ! -f /etc/bind/named.conf.default-zones ]; then echo 'zone \".\" { type hint; file \"/usr/share/dns/root.hints\"; };' > /etc/bind/named.conf.default-zones; fi && exec /usr/sbin/named -u root -g"]
     networks:
       - dns-network
 
@@ -27,9 +27,7 @@ services:
     image: ghcr.io/kuyapollio/bind9webui-backend:latest
     container_name: dns-ui-backend
     restart: unless-stopped
-    # Expose backend port for frontend access
-    ports:
-      - "3001:3001"
+    # No ports exposed - only accessible from frontend container
     volumes:
       - /bind9/config:/app/bind9/config
       - /bind9/records:/app/bind9/records
@@ -48,8 +46,8 @@ services:
       - BIND9_RECORDS_PATH=/app/bind9/records
       - DATA_PATH=/app/data
       
-      # Frontend URL (for CORS) - Allow specific origin
-      - FRONTEND_URL=http://10.0.0.11:3131
+      # Frontend URL (for CORS) - Allow all origins since nginx will proxy
+      - FRONTEND_URL=*
       # Trust proxy for rate limiting
       - TRUST_PROXY=true
       
@@ -67,8 +65,8 @@ services:
     ports:
       - "3131:80"
     environment:
-      # API Configuration - Override hardcoded localhost:3001
-      - REACT_APP_API_URL=http://10.0.0.11:3001
+      # API Configuration - Use relative URL for nginx proxy
+      - REACT_APP_API_URL=
     depends_on:
       - dns-ui-backend
     networks:
