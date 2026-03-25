@@ -385,6 +385,31 @@ function parseZoneFile(content) {
   return records;
 }
 
+// Strip BIND-style comments (; to end of line), respecting quoted strings (e.g. TXT).
+function stripZoneLineComment(line) {
+  let inQuote = false;
+  let escape = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (c === '\\') {
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (c === ';' && !inQuote) {
+      return line.slice(0, i).trimEnd();
+    }
+  }
+  return line;
+}
+
 // Helper function to validate zone file format
 function validateZoneFile(content) {
   const errors = [];
@@ -392,10 +417,20 @@ function validateZoneFile(content) {
   let hasSOA = false;
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const trimmed = lines[i].trim();
     const lineNumber = i + 1;
     
-    if (!line || line.startsWith(';') || line.startsWith('//')) {
+    if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('//')) {
+      continue;
+    }
+    
+    const line = stripZoneLineComment(trimmed);
+    if (!line) {
+      continue;
+    }
+    
+    // Zone directives ($TTL, $ORIGIN, …) — not RR lines; $ORIGIN contains "IN" as substring
+    if (line.startsWith('$')) {
       continue;
     }
     
@@ -404,8 +439,8 @@ function validateZoneFile(content) {
       hasSOA = true;
     }
     
-    // Basic syntax validation
-    if (line.includes('IN') && !line.match(/\s+IN\s+/)) {
+    // Basic syntax validation (class IN with surrounding whitespace)
+    if (line.includes(' IN ') && !line.match(/\s+IN\s+/)) {
       errors.push(`Line ${lineNumber}: Invalid record class format`);
     }
     
