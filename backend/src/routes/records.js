@@ -129,14 +129,9 @@ router.put('/zones/:filename', requireAdmin, [
     const { filename } = req.params;
     const { content } = req.body;
     const filePath = path.join(BIND9_RECORDS_PATH, filename);
-    
-    // Create backup before modifying
-    const backupPath = path.join(BIND9_RECORDS_PATH, `${filename}.backup.${Date.now()}`);
-    if (await fs.pathExists(filePath)) {
-      await fs.copy(filePath, backupPath);
-    }
 
-    // Validate zone file format
+    await fs.ensureDir(BIND9_RECORDS_PATH);
+
     const validation = validateZoneFile(content);
     if (!validation.valid) {
       return res.status(400).json({ 
@@ -145,10 +140,15 @@ router.put('/zones/:filename', requireAdmin, [
       });
     }
 
-    // Write new content
+    const backupPath = path.join(BIND9_RECORDS_PATH, `${filename}.backup.${Date.now()}`);
+    let backupBasename = null;
+    if (await fs.pathExists(filePath)) {
+      await fs.copy(filePath, backupPath);
+      backupBasename = path.basename(backupPath);
+    }
+
     await fs.writeFile(filePath, content, 'utf8');
     
-    // Get updated file stats
     const stats = await fs.stat(filePath);
     const records = parseZoneFile(content);
 
@@ -158,11 +158,19 @@ router.put('/zones/:filename', requireAdmin, [
       records,
       size: stats.size,
       modified: stats.mtime,
-      backup: path.basename(backupPath)
+      backup: backupBasename
     });
   } catch (error) {
     console.error('Error updating zone file:', error);
-    res.status(500).json({ error: 'Failed to update zone file' });
+    const payload = { error: 'Failed to update zone file' };
+    if (error.code) {
+      payload.code = error.code;
+    }
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      payload.hint =
+        'The server cannot write the zone file. Ensure the bind-mounted records directory is writable by the backend (e.g. ownership for user nodejs uid 1001, or rebuild the image with the updated entrypoint).';
+    }
+    res.status(500).json(payload);
   }
 });
 
